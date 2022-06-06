@@ -82,7 +82,7 @@ pub use temporary_store::AuthorityTemporaryStore;
 mod authority_store;
 use crate::gateway_types::SuiTransactionEffects;
 pub use authority_store::{
-    AuthorityStore, AuthorityStoreWrapper, GatewayStore, ReplicaStore, SuiDataStore,
+    AuthorityStore, GatewayStore, ReplicaStore, ResolverWrapper, SuiDataStore,
 };
 use sui_types::messages_checkpoint::{
     CheckpointRequest, CheckpointRequestType, CheckpointResponse,
@@ -242,7 +242,7 @@ pub struct AuthorityState {
 
     indexes: Option<Arc<IndexStore>>,
 
-    module_cache: SyncModuleCache<AuthorityStoreWrapper>, // TODO: use strategies (e.g. LRU?) to constraint memory usage
+    module_cache: SyncModuleCache<ResolverWrapper<AuthorityStore>>, // TODO: use strategies (e.g. LRU?) to constraint memory usage
 
     event_handler: Option<Arc<EventHandler>>,
 
