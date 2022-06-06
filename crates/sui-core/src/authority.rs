@@ -80,6 +80,7 @@ mod temporary_store;
 pub use temporary_store::AuthorityTemporaryStore;
 
 mod authority_store;
+use crate::gateway_types::SuiTransactionEffects;
 pub use authority_store::{
     AuthorityStore, AuthorityStoreWrapper, GatewayStore, ReplicaStore, SuiDataStore,
 };
