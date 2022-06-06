@@ -11,14 +11,13 @@ use std::time::Duration;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::future;
-use move_bytecode_utils::module_cache::ModuleCache;
+use move_bytecode_utils::module_cache::SyncModuleCache;
 use move_core_types::identifier::Identifier;
 use move_core_types::language_storage::TypeTag;
 use once_cell::sync::Lazy;
 use prometheus_exporter::prometheus::{
     register_histogram, register_int_counter, Histogram, IntCounter,
 };
-use tokio::sync::Mutex;
 use tracing::{debug, error, Instrument};
 
 use sui_adapter::adapter::resolve_and_type_check;
@@ -168,8 +167,6 @@ impl Default for GatewayMetrics {
 // for cases such as local tests or "sui start" which starts multiple authorities in one process.
 pub static METRICS: Lazy<GatewayMetrics> = Lazy::new(GatewayMetrics::new);
 
-type SyncSendModuleCache<T> = Arc<Mutex<ModuleCache<T>>>;
-
 pub struct GatewayState<A> {
     authorities: AuthorityAggregator<A>,
     store: Arc<GatewayStore>,
@@ -180,7 +177,7 @@ pub struct GatewayState<A> {
     /// from a gateway.
     next_tx_seq_number: AtomicU64,
     metrics: &'static GatewayMetrics,
-    module_cache: SyncSendModuleCache<ResolverWrapper<GatewayStore>>,
+    module_cache: SyncModuleCache<ResolverWrapper<GatewayStore>>,
 }
 
 impl<A> GatewayState<A> {
@@ -204,7 +201,7 @@ impl<A> GatewayState<A> {
             authorities,
             next_tx_seq_number,
             metrics: &METRICS,
-            module_cache: Arc::new(Mutex::new(ModuleCache::new(ResolverWrapper(store)))),
+            module_cache: SyncModuleCache::new(ResolverWrapper(store)),
         })
     }
 
@@ -382,17 +379,14 @@ where
         object_id: &ObjectID,
     ) -> Result<SuiObject<T>, anyhow::Error> {
         let object = self.get_object_internal(object_id).await?;
-        self.to_sui_object(object).await
+        self.to_sui_object(object)
     }
 
-    async fn to_sui_object<T: SuiMoveObject>(
+    fn to_sui_object<T: SuiMoveObject>(
         &self,
         object: Object,
     ) -> Result<SuiObject<T>, anyhow::Error> {
-        let layout = object.get_layout(
-            ObjectFormatOptions::default(),
-            &*self.module_cache.lock().await,
-        )?;
+        let layout = object.get_layout(ObjectFormatOptions::default(), &self.module_cache)?;
         SuiObject::<T>::try_from(object, layout)
     }
 
@@ -630,9 +624,9 @@ where
                     }
                     .into()
                 );
-                updated_gas = Some(self.to_sui_object(object).await?);
+                updated_gas = Some(self.to_sui_object(object)?);
             } else {
-                created_objects.push(self.to_sui_object(object).await?);
+                created_objects.push(self.to_sui_object(object)?);
             }
         }
         let package = package
@@ -919,10 +913,7 @@ where
         return Ok(TransactionResponse::EffectResponse(
             TransactionEffectsResponse {
                 certificate: certificate.try_into()?,
-                effects: SuiTransactionEffects::try_from(
-                    effects,
-                    &*self.module_cache.lock().await,
-                )?,
+                effects: SuiTransactionEffects::try_from(effects, &self.module_cache)?,
             },
         ));
     }
