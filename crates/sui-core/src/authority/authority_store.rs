@@ -3,6 +3,7 @@
 use super::*;
 use crate::epoch::EpochInfoLocals;
 use crate::gateway_state::GatewayTxSeqNumber;
+use crate::transaction_input_checker::InputObjects;
 use narwhal_executor::ExecutionIndices;
 use rocksdb::Options;
 use serde::{Deserialize, Serialize};
@@ -598,7 +599,7 @@ impl<
     /// need to recreate the temporary store based on the inputs and effects to update it properly.
     pub async fn update_gateway_state(
         &self,
-        active_inputs: Vec<(InputObjectKind, Object)>,
+        input_objects: InputObjects,
         mutated_objects: HashMap<ObjectRef, Object>,
         certificate: CertifiedTransaction,
         effects: TransactionEffectsEnvelope<S>,
@@ -606,7 +607,7 @@ impl<
     ) -> SuiResult {
         let transaction_digest = certificate.digest();
         let mut temporary_store =
-            AuthorityTemporaryStore::new(Arc::new(&self), active_inputs, *transaction_digest);
+            AuthorityTemporaryStore::new(Arc::new(&self), input_objects, *transaction_digest);
         for (_, object) in mutated_objects {
             temporary_store.write_object(object);
         }
@@ -1210,7 +1211,8 @@ pub async fn store_package_and_init_modules_for_genesis<
         .collect::<Vec<_>>();
 
     debug_assert!(ctx.digest() == TransactionDigest::genesis());
-    let mut temporary_store = AuthorityTemporaryStore::new(store.clone(), filtered, ctx.digest());
+    let mut temporary_store =
+        AuthorityTemporaryStore::new(store.clone(), InputObjects::new(filtered), ctx.digest());
     let package_id = ObjectID::from(*modules[0].self_id().address());
     let natives = native_functions.clone();
     let mut gas_status = SuiGasStatus::new_unmetered();
@@ -1244,7 +1246,8 @@ pub async fn generate_genesis_system_object<
     genesis_ctx: &mut TxContext,
 ) -> SuiResult {
     let genesis_digest = genesis_ctx.digest();
-    let mut temporary_store = AuthorityTemporaryStore::new(store.clone(), vec![], genesis_digest);
+    let mut temporary_store =
+        AuthorityTemporaryStore::new(store.clone(), InputObjects::new(vec![]), genesis_digest);
     let pubkeys: Vec<Vec<u8>> = committee
         .expanded_keys
         .values()

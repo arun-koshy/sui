@@ -1,11 +1,12 @@
 // Copyright (c) 2022, Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use prometheus_exporter::prometheus::IntCounter;
 use serde::{Deserialize, Serialize};
 use sui_adapter::object_root_ancestor_map::ObjectRootAncestorMap;
+use sui_types::base_types::TransactionDigest;
 use sui_types::{
     base_types::{ObjectID, ObjectRef, SequenceNumber, SuiAddress},
     error::{SuiError, SuiResult},
@@ -18,12 +19,101 @@ use tracing::{debug, instrument};
 
 use crate::authority::SuiDataStore;
 
+pub struct InputObjects {
+    objects: Vec<(InputObjectKind, Object)>,
+}
+
+impl InputObjects {
+    pub fn new(objects: Vec<(InputObjectKind, Object)>) -> Self {
+        Self { objects }
+    }
+
+    pub fn len(&self) -> usize {
+        self.objects.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.objects.is_empty()
+    }
+
+    pub fn filter_owned_objects(&self) -> Vec<ObjectRef> {
+        let owned_objects: Vec<_> = self
+            .objects
+            .iter()
+            .filter_map(|(object_kind, object)| match object_kind {
+                InputObjectKind::MovePackage(_) => None,
+                InputObjectKind::ImmOrOwnedMoveObject(object_ref) => {
+                    if object.is_immutable() {
+                        None
+                    } else {
+                        Some(*object_ref)
+                    }
+                }
+                InputObjectKind::SharedMoveObject(_) => None,
+                InputObjectKind::QuasiSharedMoveObject(_) => None,
+            })
+            .collect();
+
+        debug!(
+            num_mutable_objects = owned_objects.len(),
+            "Checked locks and found mutable objects"
+        );
+
+        owned_objects
+    }
+
+    pub fn filter_shared_objects(&self) -> Vec<ObjectRef> {
+        self.objects
+            .iter()
+            .filter(|(kind, _)| {
+                matches!(kind, InputObjectKind::SharedMoveObject(_))
+                    || matches!(kind, InputObjectKind::QuasiSharedMoveObject(_))
+            })
+            .map(|(_, obj)| obj.compute_object_reference())
+            .collect()
+    }
+
+    pub fn transaction_dependencies(&self) -> BTreeSet<TransactionDigest> {
+        self.objects
+            .iter()
+            .map(|(_, obj)| obj.previous_transaction)
+            .collect()
+    }
+
+    pub fn active_inputs(&self) -> Vec<ObjectRef> {
+        self.objects
+            .iter()
+            .filter_map(|(kind, object)| match kind {
+                InputObjectKind::MovePackage(_) => None,
+                InputObjectKind::ImmOrOwnedMoveObject(object_ref) => {
+                    if object.is_immutable() {
+                        None
+                    } else {
+                        Some(*object_ref)
+                    }
+                }
+                InputObjectKind::SharedMoveObject(_) => Some(object.compute_object_reference()),
+                InputObjectKind::QuasiSharedMoveObject(_) => {
+                    Some(object.compute_object_reference())
+                }
+            })
+            .collect()
+    }
+
+    pub fn into_object_map(self) -> BTreeMap<ObjectID, Object> {
+        self.objects
+            .into_iter()
+            .map(|(_, object)| (object.id(), object))
+            .collect()
+    }
+}
+
 #[instrument(level = "trace", skip_all)]
 pub async fn check_transaction_input<const A: bool, const B: bool, S, T>(
     store: &SuiDataStore<A, B, S>,
     transaction: &TransactionEnvelope<T>,
     shared_obj_metric: &IntCounter,
-) -> Result<(SuiGasStatus<'static>, Vec<(InputObjectKind, Object)>), SuiError>
+) -> Result<(SuiGasStatus<'static>, InputObjects), SuiError>
 where
     S: Eq + Serialize + for<'de> Deserialize<'de>,
 {
@@ -35,7 +125,7 @@ where
     )
     .await?;
 
-    let objects_by_kind = check_locks(store, &transaction.data).await?;
+    let input_objects = check_locks(store, &transaction.data).await?;
 
     if transaction.contains_shared_object() {
         shared_obj_metric.inc();
@@ -45,7 +135,7 @@ where
         gas_status.charge_consensus()?;
     }
 
-    Ok((gas_status, objects_by_kind))
+    Ok((gas_status, input_objects))
 }
 
 /// Checking gas budget by fetching the gas object only from the store,
@@ -94,7 +184,7 @@ where
 async fn check_locks<const A: bool, const B: bool, S>(
     store: &SuiDataStore<A, B, S>,
     transaction: &TransactionData,
-) -> Result<Vec<(InputObjectKind, Object)>, SuiError>
+) -> Result<InputObjects, SuiError>
 where
     S: Eq + Serialize + for<'de> Deserialize<'de>,
 {
@@ -174,32 +264,7 @@ where
     }
     fp_ensure!(!all_objects.is_empty(), SuiError::ObjectInputArityViolation);
 
-    Ok(all_objects)
-}
-
-pub fn filter_owned_objects(all_objects: &[(InputObjectKind, Object)]) -> Vec<ObjectRef> {
-    let owned_objects: Vec<_> = all_objects
-        .iter()
-        .filter_map(|(object_kind, object)| match object_kind {
-            InputObjectKind::MovePackage(_) => None,
-            InputObjectKind::ImmOrOwnedMoveObject(object_ref) => {
-                if object.is_immutable() {
-                    None
-                } else {
-                    Some(*object_ref)
-                }
-            }
-            InputObjectKind::SharedMoveObject(_) => None,
-            InputObjectKind::QuasiSharedMoveObject(_) => None,
-        })
-        .collect();
-
-    debug!(
-        num_mutable_objects = owned_objects.len(),
-        "Checked locks and found mutable objects"
-    );
-
-    owned_objects
+    Ok(InputObjects::new(all_objects))
 }
 
 /// The logic to check one object against a reference, and return the object if all is well
