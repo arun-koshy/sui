@@ -459,6 +459,11 @@ impl Object {
         Self::with_id_owner_gas_for_testing(id, SequenceNumber::new(), owner, GAS_VALUE_FOR_TESTING)
     }
 
+    pub fn with_id_owner_version_for_testing(id: ObjectID, version: SequenceNumber, owner: SuiAddress) -> Self {
+        // For testing, we provide sufficient gas by default.
+        Self::with_id_owner_gas_for_testing(id, version, owner, GAS_VALUE_FOR_TESTING)
+    }
+
     pub fn with_owner_for_testing(owner: SuiAddress) -> Self {
         Self::with_id_owner_for_testing(ObjectID::random(), owner)
     }
