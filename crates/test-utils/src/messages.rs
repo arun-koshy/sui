@@ -1,5 +1,6 @@
 // Copyright (c) 2022, Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
+
 use crate::objects::test_gas_objects;
 use crate::objects::test_shared_object;
 use crate::test_committee;
@@ -11,11 +12,11 @@ use std::path::PathBuf;
 use sui_adapter::genesis;
 use sui_types::base_types::ObjectRef;
 use sui_types::crypto::Signature;
-use sui_types::messages::{CallArg, TransactionEffects};
+use sui_types::messages::CallArg;
 use sui_types::messages::{
     CertifiedTransaction, SignatureAggregator, SignedTransaction, Transaction, TransactionData,
 };
-use sui_types::object::{Object, Owner};
+use sui_types::object::Object;
 
 /// The maximum gas per transaction.
 pub const MAX_GAS: u64 = 10_000;
@@ -73,10 +74,8 @@ pub fn test_shared_object_transactions() -> Vec<Transaction> {
 }
 
 /// Make a transaction to publish a test move contracts package.
-pub fn publish_move_package_transaction(gas_object: Object) -> Transaction {
+pub fn create_publish_move_package_transaction(gas_object: Object, path: PathBuf) -> Transaction {
     let build_config = BuildConfig::default();
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("../../sui_programmability/examples/basics");
     let modules = sui_framework::build_move_package(&path, build_config, false).unwrap();
 
     let all_module_bytes = modules
@@ -144,14 +143,4 @@ pub fn make_certificates(transactions: Vec<Transaction>) -> Vec<CertifiedTransac
         }
     }
     certificates
-}
-
-/// Extract the package reference from a transaction effect. This is useful to deduce the
-/// authority-created package reference after attempting to publish a new Move package.
-pub fn parse_package_ref(effects: &TransactionEffects) -> Option<ObjectRef> {
-    effects
-        .created
-        .iter()
-        .find(|(_, owner)| matches!(owner, Owner::Immutable))
-        .map(|(reference, _)| *reference)
 }

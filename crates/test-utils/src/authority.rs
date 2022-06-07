@@ -70,3 +70,7 @@ pub fn create_authority_aggregator(
         .collect();
     AuthorityAggregator::new(committee, clients)
 }
+
+pub fn get_client(config: &ValidatorInfo) -> NetworkAuthorityClient {
+    NetworkAuthorityClient::connect_lazy(config.network_address()).unwrap()
+}

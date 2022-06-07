@@ -117,8 +117,8 @@ impl SingleTransactionKind {
         match &self {
             Self::Call(MoveCall { arguments, .. }) => {
                 Either::Left(arguments.iter().filter_map(|arg| match arg {
-                    CallArg::Pure(_) | CallArg::ImmOrOwnedObject(_) | CallArg::QuasiSharedObject(_) => None,
-                    CallArg::SharedObject(id) => Some(id),
+                    CallArg::Pure(_) | CallArg::ImmOrOwnedObject(_) => None,
+                    CallArg::SharedObject(id) | CallArg::QuasiSharedObject(id) => Some(id),
                 }))
             }
             _ => Either::Right(std::iter::empty()),
@@ -144,7 +144,9 @@ impl SingleTransactionKind {
                         Some(InputObjectKind::ImmOrOwnedMoveObject(*object_ref))
                     }
                     CallArg::SharedObject(id) => Some(InputObjectKind::SharedMoveObject(*id)),
-                    CallArg::QuasiSharedObject(id) => Some(InputObjectKind::QuasiSharedMoveObject(*id)),
+                    CallArg::QuasiSharedObject(id) => {
+                        Some(InputObjectKind::QuasiSharedMoveObject(*id))
+                    }
                 })
                 .chain([InputObjectKind::MovePackage(package.0)])
                 .collect(),
@@ -1100,7 +1102,9 @@ impl InputObjectKind {
         match *self {
             Self::MovePackage(package_id) => SuiError::DependentPackageNotFound { package_id },
             Self::ImmOrOwnedMoveObject((object_id, _, _)) => SuiError::ObjectNotFound { object_id },
-            Self::SharedMoveObject(object_id) | Self::QuasiSharedMoveObject(object_id) => SuiError::ObjectNotFound { object_id },
+            Self::SharedMoveObject(object_id) | Self::QuasiSharedMoveObject(object_id) => {
+                SuiError::ObjectNotFound { object_id }
+            }
         }
     }
 }
