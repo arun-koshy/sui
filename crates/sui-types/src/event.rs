@@ -1,11 +1,7 @@
 // Copyright (c) 2022, Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use move_bytecode_utils::{layout::TypeLayoutBuilder, module_cache::GetModule};
-use move_core_types::{
-    language_storage::{ModuleId, StructTag, TypeTag},
-    value::{MoveStruct, MoveTypeLayout},
-};
+use move_core_types::language_storage::{ModuleId, StructTag};
 use name_variant::NamedVariant;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -15,7 +11,6 @@ use crate::object::MoveObject;
 use crate::{
     base_types::{ObjectID, SequenceNumber, SuiAddress, TransactionDigest},
     committee::EpochId,
-    error::SuiError,
     messages_checkpoint::CheckpointSequenceNumber,
 };
 use schemars::JsonSchema;
@@ -118,38 +113,6 @@ impl Event {
         match self {
             Event::MoveEvent(event) => Some(event.type_.module_id()),
             _ => None,
-        }
-    }
-
-    /// Extracts a MoveStruct, if possible, from the event
-    pub fn extract_move_struct(
-        &self,
-        resolver: &impl GetModule,
-    ) -> Result<Option<MoveStruct>, SuiError> {
-        match self {
-            Event::MoveEvent(event_obj) => {
-                let typestruct = TypeTag::Struct(event_obj.type_.clone());
-                let layout =
-                    TypeLayoutBuilder::build_with_fields(&typestruct, resolver).map_err(|e| {
-                        SuiError::ObjectSerializationError {
-                            error: e.to_string(),
-                        }
-                    })?;
-                match layout {
-                    MoveTypeLayout::Struct(l) => {
-                        let s = MoveStruct::simple_deserialize(event_obj.contents(), &l).map_err(
-                            |e| SuiError::ObjectSerializationError {
-                                error: e.to_string(),
-                            },
-                        )?;
-                        Ok(Some(s))
-                    }
-                    _ => unreachable!(
-                        "We called build_with_types on Struct type, should get a struct layout"
-                    ),
-                }
-            }
-            _ => Ok(None),
         }
     }
 }
