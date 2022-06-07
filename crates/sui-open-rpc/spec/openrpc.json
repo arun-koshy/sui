@@ -1115,7 +1115,23 @@
             ],
             "properties": {
               "moveEvent": {
-                "$ref": "#/components/schemas/MoveObject"
+                "type": "object",
+                "required": [
+                  "bcs",
+                  "fields",
+                  "type"
+                ],
+                "properties": {
+                  "bcs": {
+                    "$ref": "#/components/schemas/Base64"
+                  },
+                  "fields": {
+                    "$ref": "#/components/schemas/MoveStruct"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                }
               }
             },
             "additionalProperties": false
