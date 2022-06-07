@@ -45,6 +45,10 @@ pub enum CallArg {
     ImmOrOwnedObject(ObjectRef),
     // A Move object that's shared and mutable.
     SharedObject(ObjectID),
+    // Child object of shared object. Such object will appear to be owned object in the store,
+    // but since it's owned by a shared object, it can be used by anyone, hence behaves similar
+    // to a shared object.
+    QuasiSharedObject(ObjectID),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
@@ -113,7 +117,7 @@ impl SingleTransactionKind {
         match &self {
             Self::Call(MoveCall { arguments, .. }) => {
                 Either::Left(arguments.iter().filter_map(|arg| match arg {
-                    CallArg::Pure(_) | CallArg::ImmOrOwnedObject(_) => None,
+                    CallArg::Pure(_) | CallArg::ImmOrOwnedObject(_) | CallArg::QuasiSharedObject(_) => None,
                     CallArg::SharedObject(id) => Some(id),
                 }))
             }
@@ -140,6 +144,7 @@ impl SingleTransactionKind {
                         Some(InputObjectKind::ImmOrOwnedMoveObject(*object_ref))
                     }
                     CallArg::SharedObject(id) => Some(InputObjectKind::SharedMoveObject(*id)),
+                    CallArg::QuasiSharedObject(id) => Some(InputObjectKind::QuasiSharedMoveObject(*id)),
                 })
                 .chain([InputObjectKind::MovePackage(package.0)])
                 .collect(),
@@ -1069,6 +1074,8 @@ pub enum InputObjectKind {
     ImmOrOwnedMoveObject(ObjectRef),
     // A Move object that's shared and mutable.
     SharedMoveObject(ObjectID),
+    // A Move object whose root ancestor is a shared object.
+    QuasiSharedMoveObject(ObjectID),
 }
 
 impl InputObjectKind {
@@ -1077,6 +1084,7 @@ impl InputObjectKind {
             Self::MovePackage(id) => *id,
             Self::ImmOrOwnedMoveObject((id, _, _)) => *id,
             Self::SharedMoveObject(id) => *id,
+            Self::QuasiSharedMoveObject(id) => *id,
         }
     }
 
@@ -1084,7 +1092,7 @@ impl InputObjectKind {
         match self {
             Self::MovePackage(..) => OBJECT_START_VERSION,
             Self::ImmOrOwnedMoveObject((_, version, _)) => *version,
-            Self::SharedMoveObject(..) => OBJECT_START_VERSION,
+            Self::SharedMoveObject(..) | Self::QuasiSharedMoveObject(..) => OBJECT_START_VERSION,
         }
     }
 
@@ -1092,7 +1100,7 @@ impl InputObjectKind {
         match *self {
             Self::MovePackage(package_id) => SuiError::DependentPackageNotFound { package_id },
             Self::ImmOrOwnedMoveObject((object_id, _, _)) => SuiError::ObjectNotFound { object_id },
-            Self::SharedMoveObject(object_id) => SuiError::ObjectNotFound { object_id },
+            Self::SharedMoveObject(object_id) | Self::QuasiSharedMoveObject(object_id) => SuiError::ObjectNotFound { object_id },
         }
     }
 }

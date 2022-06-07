@@ -51,6 +51,9 @@ impl<S> AuthorityTemporaryStore<S> {
                     }
                 }
                 InputObjectKind::SharedMoveObject(_) => Some(object.compute_object_reference()),
+                InputObjectKind::QuasiSharedMoveObject(_) => {
+                    Some(object.compute_object_reference())
+                }
             })
             .collect();
         let objects = input_objects

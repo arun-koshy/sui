@@ -1,10 +1,11 @@
 // Copyright (c) 2022, Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use prometheus_exporter::prometheus::IntCounter;
 use serde::{Deserialize, Serialize};
+use sui_adapter::object_root_ancestor_map::ObjectRootAncestorMap;
 use sui_types::{
     base_types::{ObjectID, ObjectRef, SequenceNumber, SuiAddress},
     error::{SuiError, SuiResult},
@@ -113,17 +114,18 @@ where
     // TODO: We should be able to allow the same shared object to show up
     // in more than one SingleTransactionKind. We need to ensure that their
     // version number only increases once at the end of the Batch execution.
-    let mut owned_object_authenticators: HashSet<SuiAddress> = HashSet::new();
+    let mut object_owner_map = BTreeMap::new();
     for object in objects.iter().flatten() {
         if !object.is_immutable() {
             fp_ensure!(
-                owned_object_authenticators.insert(object.id().into()),
+                object_owner_map.insert(object.id(), object.owner).is_none(),
                 SuiError::InvalidBatchTransaction {
                     error: format!("Mutable object {} cannot appear in more than one single transactions in a batch", object.id()),
                 }
             );
         }
     }
+    let root_ancestor_map = ObjectRootAncestorMap::new(&object_owner_map)?;
 
     // Gather all objects and errors.
     let mut all_objects = Vec::with_capacity(input_objects.len());
@@ -157,7 +159,7 @@ where
             &transaction.signer(),
             object_kind,
             &object,
-            &owned_object_authenticators,
+            &root_ancestor_map,
         ) {
             Ok(()) => all_objects.push((object_kind, object)),
             Err(e) => {
@@ -188,6 +190,7 @@ pub fn filter_owned_objects(all_objects: &[(InputObjectKind, Object)]) -> Vec<Ob
                 }
             }
             InputObjectKind::SharedMoveObject(_) => None,
+            InputObjectKind::QuasiSharedMoveObject(_) => None,
         })
         .collect();
 
@@ -205,7 +208,7 @@ fn check_one_lock(
     sender: &SuiAddress,
     object_kind: InputObjectKind,
     object: &Object,
-    owned_object_authenticators: &HashSet<SuiAddress>,
+    root_ancestor_map: &ObjectRootAncestorMap,
 ) -> SuiResult {
     match object_kind {
         InputObjectKind::MovePackage(package_id) => {
@@ -260,15 +263,9 @@ fn check_one_lock(
                         }
                     );
                 }
-                Owner::ObjectOwner(owner) => {
-                    // Check that the object owner is another mutable object in the input.
-                    fp_ensure!(
-                        owned_object_authenticators.contains(&owner),
-                        SuiError::MissingObjectOwner {
-                            child_id: object.id(),
-                            parent_id: owner.into(),
-                        }
-                    );
+                Owner::ObjectOwner(_) => {
+                    // Nothing to check for object ownd object, because the fact that we were able
+                    // to build a root ancestor map means all authenticating objects are there.
                 }
                 Owner::Shared => {
                     // This object is a mutable shared object. However the transaction
@@ -280,6 +277,23 @@ fn check_one_lock(
         InputObjectKind::SharedMoveObject(..) => {
             // When someone locks an object as shared it must be shared already.
             fp_ensure!(object.is_shared(), SuiError::NotSharedObjectError);
+        }
+        InputObjectKind::QuasiSharedMoveObject(..) => {
+            fp_ensure!(
+                matches!(object.owner, Owner::ObjectOwner(..)),
+                SuiError::NotQuasiSharedObjectError {
+                    object_id: object.id(),
+                    reason: "The object is not owned by object".to_owned(),
+                }
+            );
+            let (_, ancestor_owner) = root_ancestor_map.get_root_ancestor(&object.id())?;
+            fp_ensure!(
+                ancestor_owner.is_shared(),
+                SuiError::NotQuasiSharedObjectError {
+                    object_id: object.id(),
+                    reason: "The root ancestor object is not a shared object".to_owned(),
+                }
+            );
         }
     };
     Ok(())
