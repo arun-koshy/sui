@@ -22,7 +22,7 @@ use schemars::JsonSchema;
 use serde_with::serde_as;
 
 /// A universal Sui event type encapsulating different types of events
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventEnvelope {
     /// UTC timestamp in milliseconds since epoch (1/1/1970)
     timestamp: u64,
@@ -83,7 +83,7 @@ pub enum Event {
     DeleteObject(ObjectID),
     /// New object creation
     NewObject(ObjectID),
-    /// Epooch change
+    /// Epoch change
     EpochChange(EpochId),
     /// New checkpoint
     Checkpoint(CheckpointSequenceNumber),
