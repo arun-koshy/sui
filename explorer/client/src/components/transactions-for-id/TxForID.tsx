@@ -13,23 +13,29 @@ import Longtext from '../longtext/Longtext';
 const DATATYPE_DEFAULT = {
     to: [],
     from: [],
+    input: [],
+    mutated: [],
     loadState: 'pending',
 };
 
-const getTx = async (id: string, network: string, category: 'address') =>
-    rpc(network).getTransactionsForAddress(id);
+type categoryType = 'address' | 'object';
 
-function TxForIDView({
+const getTx = async (id: string, network: string, category: categoryType) =>
+    category === 'address'
+        ? rpc(network).getTransactionsForAddress(id)
+        : rpc(network).getTransactionsForObject(id);
+
+const deduplicate = (results: string[][]) =>
+    results
+        .map((result) => result[1])
+        .filter((value, index, self) => self.indexOf(value) === index);
+
+function TxForAddressIDView({
     showData,
 }: {
     showData: { to: string[][] | never[]; from: string[][] | never[] };
 }) {
     if (!showData.from || !showData.to) return <></>;
-    const deduplicate = (results: string[][]) =>
-        results
-            .map((result) => result[1])
-            .filter((value, index, self) => self.indexOf(value) === index);
-
     return (
         <>
             <div>
@@ -64,16 +70,67 @@ function TxForIDView({
     );
 }
 
-function TxForIDStatic({ id, category }: { id: string; category: 'address' }) {
+function TxForObjectIDView({
+    showData,
+}: {
+    showData: { input: string[][] | never[]; mutated: string[][] | never[] };
+}) {
+    if (!showData.input || !showData.mutated) return <></>;
+    return (
+        <>
+            <div>
+                <div>Input Transactions</div>
+                <div id="txInput">
+                    {deduplicate(showData.input).map((x, index) => (
+                        <div key={`from-${index}`}>
+                            <Longtext
+                                text={x}
+                                category="transactions"
+                                isLink={true}
+                            />
+                        </div>
+                    ))}
+                </div>
+            </div>
+            <div>
+                <div>Mutated Transactions</div>
+                <div id="txMutated">
+                    {deduplicate(showData.mutated).map((x, index) => (
+                        <div key={`to-${index}`}>
+                            <Longtext
+                                text={x}
+                                category="transactions"
+                                isLink={true}
+                            />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </>
+    );
+}
+function TxForIDStatic({
+    id,
+    category,
+}: {
+    id: string;
+    category: categoryType;
+}) {
     const showData = findTxfromID(id);
-    if (showData?.to?.[0] && showData?.from?.[0]) {
-        return <TxForIDView showData={showData} />;
-    } else {
-        return <></>;
+    if (category === 'address' && showData?.to?.[0] && showData?.from?.[0]) {
+        return <TxForAddressIDView showData={showData} />;
     }
+    if (
+        category === 'object' &&
+        showData?.input?.[0] &&
+        showData?.mutated?.[0]
+    ) {
+        return <TxForObjectIDView showData={showData} />;
+    }
+    return <></>;
 }
 
-function TxForIDAPI({ id, category }: { id: string; category: 'address' }) {
+function TxForIDAPI({ id, category }: { id: string; category: categoryType }) {
     const [showData, setData] = useState(DATATYPE_DEFAULT);
     const [network] = useContext(NetworkContext);
     useEffect(() => {
@@ -95,7 +152,10 @@ function TxForIDAPI({ id, category }: { id: string; category: 'address' }) {
     }
 
     if (showData.loadState === 'loaded') {
-        return <TxForIDView showData={showData} />;
+        if (category === 'address')
+            return <TxForAddressIDView showData={showData} />;
+        if (category === 'object')
+            return <TxForObjectIDView showData={showData} />;
     }
 
     return (
@@ -111,7 +171,7 @@ export default function TxForID({
     category,
 }: {
     id: string;
-    category: 'address';
+    category: categoryType;
 }) {
     return IS_STATIC_ENV ? (
         <TxForIDStatic id={id} category={category} />
