@@ -79,7 +79,7 @@ function TxForObjectIDView({
     return (
         <>
             <div>
-                <div>Input Transactions</div>
+                <div>Input</div>
                 <div id="txInput">
                     {deduplicate(showData.input).map((x, index) => (
                         <div key={`from-${index}`}>
@@ -93,7 +93,7 @@ function TxForObjectIDView({
                 </div>
             </div>
             <div>
-                <div>Mutated Transactions</div>
+                <div>Mutated</div>
                 <div id="txMutated">
                     {deduplicate(showData.mutated).map((x, index) => (
                         <div key={`to-${index}`}>
