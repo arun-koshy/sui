@@ -280,7 +280,7 @@ impl<
             .collect())
     }
 
-    pub fn get_object_version(
+    pub fn get_object_by_key(
         &self,
         object_id: &ObjectID,
         version: VersionNumber,
@@ -887,30 +887,24 @@ impl<
         // Make an iterator to update the locks of the transaction's shared objects.
         let ids = certificate.shared_input_objects();
         let versions = self.schedule.multi_get(ids)?;
+
         let ids = certificate.shared_input_objects();
-        let res: Result<Vec<(_, _)>, SuiError> = ids
+        let (sequenced_to_write, schedule_to_write): (Vec<_>, Vec<_>) = ids
             .zip(versions.iter())
             .map(|(id, v)| {
                 // If it is the first time the shared object has been sequenced, assign it the default
                 // sequence number (`OBJECT_START_VERSION`). Otherwise use the `scheduled` map to
                 // to assign the next sequence number.
                 let version = v.unwrap_or_else(|| OBJECT_START_VERSION);
-                if version.value() >= u64::MAX {
-                    Err(SuiError::SequenceOverflow {
-                        object_id: *id,
-                    })
-                } else {
-                    let next_version = version.increment();
-                    let sequenced = ((transaction_digest, *id), version);
-                    let scheduled = (id, next_version);
-                    Ok((sequenced, scheduled))
-                }
+                let next_version = version.increment();
+
+                let sequenced = ((transaction_digest, *id), version);
+                let scheduled = (id, next_version);
+
+                (sequenced, scheduled)
             })
-            .collect();
-        if res.is_err() {
-            return res.map(|_v| {})
-        }
-        let (sequenced_to_write, schedule_to_write): (Vec<_>, Vec<_>)  = res.unwrap().into_iter().unzip();
+            .unzip();
+
         // Make an iterator to update the last consensus index.
         let index_to_write = std::iter::once((LAST_CONSENSUS_INDEX_ADDR, consensus_index));
 
