@@ -30,12 +30,14 @@ where
         tokio::spawn(async move {
             while let Some(data) = rx.recv().await {
                 debug!(data =? data, "Get event");
-                match subscribers.send(data) {
-                    Ok(num) => {
-                        debug!("Broadcast Move event to {num} peers.")
-                    }
-                    Err(e) => {
-                        warn!("Error broadcasting event. Error: {e}")
+                if subscribers.receiver_count() > 0 {
+                    match subscribers.send(data) {
+                        Ok(num) => {
+                            debug!("Broadcast Move event to {num} peers.")
+                        }
+                        Err(e) => {
+                            warn!("Error broadcasting event. Error: {e}")
+                        }
                     }
                 }
             }
