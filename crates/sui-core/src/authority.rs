@@ -80,7 +80,6 @@ mod temporary_store;
 pub use temporary_store::AuthorityTemporaryStore;
 
 mod authority_store;
-use crate::gateway_types::SuiTransactionEffects;
 pub use authority_store::{
     AuthorityStore, GatewayStore, ReplicaStore, ResolverWrapper, SuiDataStore,
 };
@@ -842,7 +841,7 @@ impl AuthorityState {
             indexes,
             // `module_cache` uses a separate in-mem cache from `event_handler`
             // this is because they largely deal with different types of MoveStructs
-            module_cache: SyncModuleCache::new(AuthorityStoreWrapper(store.clone())),
+            module_cache: SyncModuleCache::new(ResolverWrapper(store.clone())),
             event_handler,
             checkpoints,
             batch_channels: tx,
@@ -1014,7 +1013,7 @@ impl AuthorityState {
         &self,
         digest: TransactionDigest,
     ) -> Result<TransactionEffectsResponse, anyhow::Error> {
-        QueryHelpers::get_transaction(&self.database, digest)
+        QueryHelpers::get_transaction(&self.database, &self.module_cache, digest)
     }
 
     fn get_indexes(&self) -> SuiResult<Arc<IndexStore>> {

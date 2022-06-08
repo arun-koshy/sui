@@ -1,8 +1,10 @@
 // Copyright (c) 2022, Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::gateway_types::SuiTransactionEffects;
 use crate::{authority::SuiDataStore, gateway_types::TransactionEffectsResponse};
 use anyhow::anyhow;
+use move_bytecode_utils::module_cache::GetModule;
 use serde::{Deserialize, Serialize};
 use sui_types::{base_types::*, batch::TxSequenceNumber, error::SuiError, fp_ensure};
 use tracing::debug;
@@ -81,13 +83,17 @@ impl<
 
     pub fn get_transaction(
         database: &SuiDataStore<ALL_OBJ_VER, USE_LOCKS, S>,
+        module_cache: &impl GetModule,
         digest: TransactionDigest,
     ) -> Result<TransactionEffectsResponse, anyhow::Error> {
         let opt = database.get_certified_transaction(&digest)?;
         match opt {
             Some(certificate) => Ok(TransactionEffectsResponse {
                 certificate: certificate.try_into()?,
-                effects: database.get_effects(&digest)?.into(),
+                effects: SuiTransactionEffects::try_from(
+                    database.get_effects(&digest)?,
+                    module_cache,
+                )?,
             }),
             None => Err(anyhow!(SuiError::TransactionNotFound { digest })),
         }
