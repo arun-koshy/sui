@@ -11,6 +11,7 @@ use jsonrpsee_proc_macros::rpc;
 use serde::Serialize;
 
 use sui_core::authority::AuthorityState;
+use sui_core::event_handler::EventHandler;
 use sui_core::gateway_types::SuiEvent;
 
 #[rpc(server, client, namespace = "sui")]
@@ -21,11 +22,15 @@ pub trait EventApi {
 
 pub struct EventApiImpl {
     state: Arc<AuthorityState>,
+    event_handler: Arc<EventHandler>,
 }
 
 impl EventApiImpl {
-    pub fn new(state: Arc<AuthorityState>) -> Self {
-        Self { state }
+    pub fn new(state: Arc<AuthorityState>, event_handler: Arc<EventHandler>) -> Self {
+        Self {
+            state,
+            event_handler,
+        }
     }
 }
 
@@ -33,7 +38,7 @@ impl EventApiServer for EventApiImpl {
     fn sub_move_event(&self, pending: PendingSubscription, _event_type: String) {
         if let Some(sink) = pending.accept() {
             let state = self.state.clone();
-            let stream = self.state.subscribe_event();
+            let stream = self.event_handler.subscribe();
             let stream =
                 stream.map_ok(move |e| SuiEvent::try_from(e.event, &state.module_cache).unwrap());
             spawn_subscript(sink, stream);

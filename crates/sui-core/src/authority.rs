@@ -57,7 +57,6 @@ use sui_types::{
     storage::{BackingPackageStore, DeleteKind, Storage},
     MOVE_STDLIB_ADDRESS, SUI_FRAMEWORK_ADDRESS, SUI_SYSTEM_STATE_OBJECT_ID,
 };
-use tokio_stream::wrappers::BroadcastStream;
 use tracing::{debug, error, instrument};
 use typed_store::Map;
 
@@ -84,7 +83,6 @@ mod authority_store;
 pub use authority_store::{
     AuthorityStore, GatewayStore, ReplicaStore, ResolverWrapper, SuiDataStore,
 };
-use sui_types::event::EventEnvelope;
 use sui_types::messages_checkpoint::{
     CheckpointRequest, CheckpointRequestType, CheckpointResponse,
 };
@@ -245,7 +243,7 @@ pub struct AuthorityState {
 
     pub module_cache: SyncModuleCache<ResolverWrapper<AuthorityStore>>, // TODO: use strategies (e.g. LRU?) to constraint memory usage
 
-    event_handler: Arc<EventHandler>,
+    pub event_handler: Option<Arc<EventHandler>>,
 
     /// The checkpoint store
     pub(crate) checkpoints: Option<Arc<Mutex<CheckpointStore>>>,
@@ -536,9 +534,9 @@ impl AuthorityState {
             .await?;
 
         // Each certificate only reaches here once
-        self.event_handler
-            .process_events(&signed_effects.effects)
-            .await;
+        if let Some(event_handler) = &self.event_handler {
+            event_handler.process_events(&signed_effects.effects).await;
+        }
 
         Ok(TransactionInfoResponse {
             signed_transaction: self.database.get_transaction(&transaction_digest)?,
@@ -1002,10 +1000,6 @@ impl AuthorityState {
         end: TxSequenceNumber,
     ) -> Result<Vec<(TxSequenceNumber, TransactionDigest)>, anyhow::Error> {
         QueryHelpers::get_transactions_in_range(&self.database, start, end)
-    }
-
-    pub fn subscribe_event(&self) -> BroadcastStream<EventEnvelope> {
-        self.event_handler.subscribe()
     }
 
     pub fn get_recent_transactions(
